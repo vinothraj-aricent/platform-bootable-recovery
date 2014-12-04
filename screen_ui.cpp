@@ -57,7 +57,7 @@ ScreenRecoveryUI::ScreenRecoveryUI() :
     progressScopeStart(0),
     progressScopeSize(0),
     progress(0),
-    pagesIdentical(false),
+    pagesIdentical(3),
     text_cols_(0),
     text_rows_(0),
     text_(nullptr),
@@ -145,7 +145,7 @@ int ScreenRecoveryUI::GetProgressBaseline() {
 // Clear the screen and draw the currently selected background icon (if any).
 // Should only be called with updateMutex locked.
 void ScreenRecoveryUI::draw_background_locked() {
-    pagesIdentical = false;
+    pagesIdentical = 3;
     gr_color(0, 0, 0, 255);
     gr_clear();
 
@@ -351,9 +351,9 @@ void ScreenRecoveryUI::update_screen_locked() {
 // Updates only the progress bar, if possible, otherwise redraws the screen.
 // Should only be called with updateMutex locked.
 void ScreenRecoveryUI::update_progress_locked() {
-    if (show_text || !pagesIdentical) {
+    if (show_text || pagesIdentical != 0) {
         draw_screen_locked();    // Must redraw the whole screen
-        pagesIdentical = true;
+        pagesIdentical--;
     } else {
         draw_foreground_locked();  // Draw only the progress bar and overlays
     }

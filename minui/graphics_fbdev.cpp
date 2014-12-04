@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2014 The Android Open Source Project
+ * Copyright (C) 2015 Freescale Semiconductor, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,10 +39,10 @@ static GRSurface* fbdev_flip(minui_backend*);
 static void fbdev_blank(minui_backend*, bool);
 static void fbdev_exit(minui_backend*);
 
-static GRSurface gr_framebuffer[2];
+static GRSurface gr_framebuffer[3];
 static bool double_buffered;
 static GRSurface* gr_draw = NULL;
-static int displayed_buffer;
+static int front_buffer = 0;
 
 static fb_var_screeninfo vi;
 static int fb_fd = -1;
@@ -68,20 +69,27 @@ static void fbdev_blank(minui_backend* backend __unused, bool blank)
 
 static void set_displayed_framebuffer(unsigned n)
 {
-    if (n > 1 || !double_buffered) return;
+    if (n > 2 || !double_buffered) {
+        printf("set_displayed_framebuffer failed n:%d\n", n);
+        return;
+    }
 
-    vi.yres_virtual = gr_framebuffer[0].height * 2;
-    vi.yoffset = n * gr_framebuffer[0].height;
-    vi.bits_per_pixel = gr_framebuffer[0].pixel_bytes * 8;
-    if (ioctl(fb_fd, FBIOPUT_VSCREENINFO, &vi) < 0) {
+    vi.activate = FB_ACTIVATE_VBL;
+    vi.yoffset = n * gr_framebuffer[n].height;
+    if (ioctl(fb_fd, FBIOPAN_DISPLAY, &vi) < 0) {
         perror("active fb swap failed");
     }
-    displayed_buffer = n;
+    front_buffer = (n + 1)%3;
 }
 
 static GRSurface* fbdev_init(minui_backend* backend) {
     int fd = open("/dev/graphics/fb0", O_RDWR);
     if (fd == -1) {
+    void *bits;
+
+    struct fb_fix_screeninfo fi;
+
+    front_buffer = 0;
         perror("cannot open fb0");
         return NULL;
     }
@@ -93,6 +101,36 @@ static GRSurface* fbdev_init(minui_backend* backend) {
         return NULL;
     }
 
+    if (ioctl(fd, FBIOGET_VSCREENINFO, &vi) < 0) {
+        perror("failed to get fb0 info");
+        close(fd);
+        return NULL;
+    }
+
+    vi.red.offset     = 11;
+    vi.red.length     = 5;
+    vi.green.offset   = 5;
+    vi.green.length   = 6;
+    vi.blue.offset    = 0;
+    vi.blue.length    = 5;
+    vi.transp.offset  = 0;
+    vi.transp.length  = 0;
+    vi.bits_per_pixel = 16;
+    vi.xres_virtual = vi.xres;
+    vi.yres_virtual = vi.yres * 3;
+    vi.activate = FB_ACTIVATE_NOW;
+
+    if (ioctl(fd, FBIOPUT_VSCREENINFO, &vi) < 0) {
+        perror("failed to put fb0 info");
+        close(fd);
+        return NULL;
+    }
+
+    if (ioctl(fd, FBIOGET_FSCREENINFO, &fi) < 0) {
+        perror("failed to get fb0 info");
+        close(fd);
+        return NULL;
+    }
     if (ioctl(fd, FBIOGET_VSCREENINFO, &vi) < 0) {
         perror("failed to get fb0 info");
         close(fd);
@@ -137,14 +175,18 @@ static GRSurface* fbdev_init(minui_backend* backend) {
     memset(gr_framebuffer[0].data, 0, gr_framebuffer[0].height * gr_framebuffer[0].row_bytes);
 
     /* check if we can use double buffering */
-    if (vi.yres * fi.line_length * 2 <= fi.smem_len) {
+    if (vi.yres * fi.line_length * 3 <= fi.smem_len) {
         double_buffered = true;
 
         memcpy(gr_framebuffer+1, gr_framebuffer, sizeof(GRSurface));
+        memcpy(gr_framebuffer+2, gr_framebuffer, sizeof(GRSurface));
         gr_framebuffer[1].data = gr_framebuffer[0].data +
             gr_framebuffer[0].height * gr_framebuffer[0].row_bytes;
+        memset(gr_framebuffer[1].data, 0, gr_framebuffer[1].height * gr_framebuffer[1].row_bytes);
+        gr_framebuffer[2].data = gr_framebuffer[1].data +
+            gr_framebuffer[1].height * gr_framebuffer[1].row_bytes;
 
-        gr_draw = gr_framebuffer+1;
+        gr_draw = gr_framebuffer+front_buffer;
 
     } else {
         double_buffered = false;
@@ -164,9 +206,11 @@ static GRSurface* fbdev_init(minui_backend* backend) {
 
     memset(gr_draw->data, 0, gr_draw->height * gr_draw->row_bytes);
     fb_fd = fd;
-    set_displayed_framebuffer(0);
+    set_displayed_framebuffer(front_buffer);
+    gr_draw = gr_framebuffer + front_buffer;
 
     printf("framebuffer: %d (%d x %d)\n", fb_fd, gr_draw->width, gr_draw->height);
+    printf("double_buffered: %s\n", double_buffered ? "true" : "false");
 
     fbdev_blank(backend, true);
     fbdev_blank(backend, false);
@@ -179,8 +223,8 @@ static GRSurface* fbdev_flip(minui_backend* backend __unused) {
         // Change gr_draw to point to the buffer currently displayed,
         // then flip the driver so we're displaying the other buffer
         // instead.
-        gr_draw = gr_framebuffer + displayed_buffer;
-        set_displayed_framebuffer(1-displayed_buffer);
+        set_displayed_framebuffer(front_buffer);
+        gr_draw = gr_framebuffer + front_buffer;
     } else {
         // Copy from the in-memory surface to the framebuffer.
         memcpy(gr_framebuffer[0].data, gr_draw->data,
