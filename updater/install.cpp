@@ -685,7 +685,8 @@ Value* PackageExtractBootloaderFn(const char* name, State* state,
 	file_boot_config[17] = dest_path[17];
 	fd_force_ro = open(file_force_ro,O_RDWR);
 	fd_boot_config = open(file_boot_config,O_RDWR);
-        FILE* f = fopen(dest_path, "wb");
+        FILE* f;
+        f = fopen(dest_path, "wb");
         if (f == NULL) {
             printf("%s: can't open %s for write: %s\n",
                     name, dest_path, strerror(errno));
@@ -714,7 +715,7 @@ Value* PackageExtractBootloaderFn(const char* name, State* state,
         // as the result.
 
         char* zip_path;
-        Value* v = malloc(sizeof(Value));
+        Value* v = (Value *)malloc(sizeof(Value));
         v->type = VAL_BLOB;
         v->size = -1;
         v->data = NULL;
@@ -729,7 +730,7 @@ Value* PackageExtractBootloaderFn(const char* name, State* state,
         }
 
         v->size = mzGetZipEntryUncompLen(entry);
-        v->data = malloc(v->size);
+        v->data = (char *)malloc(v->size);
         if (v->data == NULL) {
             printf("%s: failed to allocate %ld bytes for %s\n",
                     name, (long)v->size, zip_path);
@@ -1303,10 +1304,10 @@ char *write_bootloader_nand(const MtdPartition *mtd, off_t offset, Value* conten
 		filename, strerror(errno));
 	return 0;
     }
-    bootloader_head = malloc(512000);
+    bootloader_head = (char *)malloc(512000);
     memset(bootloader_head, 0, 512000);
     success = true;
-    char* buffer = malloc(BUFSIZ);
+    char* buffer = (char *)malloc(BUFSIZ);
     int read;
     while ((read = fread(buffer, 1, BUFSIZ, f)) > 0) {
 	memcpy(bootloader_head+total_offset, buffer, read);
@@ -1358,7 +1359,8 @@ Value* WriteRawBootloaderFn(const char* name, State* state, int argc, Expr* argv
     }
 
     mtd_scan_partitions();
-    const MtdPartition* mtd = mtd_find_partition_by_name(partition);
+    const MtdPartition* mtd;
+    mtd = mtd_find_partition_by_name(partition);
     if (mtd == NULL) {
         printf("%s: no mtd partition named \"%s\"\n", name, partition);
         result = strdup("");
