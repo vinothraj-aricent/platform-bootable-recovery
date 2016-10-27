@@ -29,6 +29,12 @@
 #include <android-base/unique_fd.h>
 #include <fs_mgr.h>
 
+
+#ifdef NAND_BCB_CHECK
+#include "mtdutils/mtdutils.h"
+static const int MISC_PAGES = 3;         // number of pages to save
+static const int MISC_COMMAND_PAGE = 1;  // bootloader command is this page
+#endif
 static struct fstab* read_fstab(std::string* err) {
   // The fstab path is always "/fstab.${ro.hardware}".
   std::string fstab_path = "/fstab.";
@@ -81,6 +87,7 @@ static bool wait_for_device(const std::string& blk_device, std::string* err) {
   return ret == 0;
 }
 
+#ifndef NAND_BCB_CHECK
 static bool read_misc_partition(void* p, size_t size, size_t offset, std::string* err) {
   std::string misc_blk_device = get_misc_blk_device(err);
   if (misc_blk_device.empty()) {
@@ -138,7 +145,74 @@ static bool write_misc_partition(const void* p, size_t size, size_t offset, std:
   }
   return true;
 }
+#else
+static bool read_misc_partition(void* p, size_t size, size_t offset, std::string* err) {
 
+    size_t write_size;
+    mtd_scan_partitions();
+    const MtdPartition* part = mtd_find_partition_by_name("misc");
+    if (part == nullptr || mtd_partition_info(part, nullptr, nullptr, &write_size)) {
+        *err = android::base::StringPrintf("failed to find misc partition %s", strerror(errno));
+        return false;
+    }
+
+    MtdReadContext* read = mtd_read_partition(part);
+    if (read == nullptr) {
+        *err = android::base::StringPrintf("failed to open misc partition: %s", strerror(errno));
+        return false;
+    }
+
+    const ssize_t size_info = write_size * MISC_PAGES;
+    char data[size_info];
+    ssize_t r = mtd_read_data(read, data, size_info);
+    if (r != size_info)
+        *err = android::base::StringPrintf("failed to read misc partition: %s", strerror(errno));
+    mtd_read_close(read);
+    if (r != size_info) return false;
+
+    memcpy(p, &data[write_size * MISC_COMMAND_PAGE], size);
+    return true;
+}
+
+static bool write_misc_partition(const void* p, size_t size, size_t offset, std::string* err) {
+  const MtdPartition* part;
+  size_t write_size;
+  mtd_scan_partitions();
+  part = mtd_find_partition_by_name("misc");
+  if (part == nullptr || mtd_partition_info(part, nullptr, nullptr, &write_size)) {
+      *err = android::base::StringPrintf("failed to find misc partition: %s", strerror(errno));
+      return false;
+  }
+  MtdReadContext* read = mtd_read_partition(part);
+  if (read == nullptr) {
+      *err = android::base::StringPrintf("failed to open misc: %s", strerror(errno));
+      return false;
+  }
+  ssize_t size_info = write_size * MISC_PAGES;
+  char data[size_info];
+  ssize_t r = mtd_read_data(read, data, size_info);
+  if (r != size_info)
+       *err = android::base::StringPrintf("failed to read misc partition: %s", strerror(errno));
+  mtd_read_close(read);
+  if (r != size_info) return false;
+  memcpy(&data[write_size * MISC_COMMAND_PAGE], p, size);
+  MtdWriteContext* write = mtd_write_partition(part);
+  if (write == nullptr) {
+      *err = android::base::StringPrintf("failed to open misc: %s", strerror(errno));
+      return false;
+  }
+  if (mtd_write_data(write, data, size_info) != size_info) {
+      *err = android::base::StringPrintf("failed to write misc: %s", strerror(errno));
+      return false;
+  }
+  if (mtd_write_close(write)) {
+      *err = android::base::StringPrintf("failed to finish: %s", strerror(errno));
+      return false;
+  }
+  return true;
+}
+
+#endif
 bool read_bootloader_message(bootloader_message* boot, std::string* err) {
   return read_misc_partition(boot, sizeof(*boot), BOOTLOADER_MESSAGE_OFFSET_IN_MISC, err);
 }
