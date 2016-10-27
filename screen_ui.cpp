@@ -109,11 +109,11 @@ int ScreenRecoveryUI::PixelsFromDp(int dp) {
 // ---------+-------------------------------------------------
 //      gap |   220dp     366dp            142dp      284dp
 // icon     |                   (200dp)
-//      gap |    68dp      68dp             56dp      112dp
+//      gap |    68dp      68dp             10dp      112dp
 // text     |                    (14sp)
-//      gap |    32dp      32dp             26dp       52dp
+//      gap |    32dp      32dp             10dp       52dp
 // progress |                     (2dp)
-//      gap |   194dp     340dp            131dp      262dp
+//      gap |   194dp     340dp             10dp      262dp
 
 // Note that "baseline" is actually the *top* of each icon (because that's how our drawing
 // routines work), so that's the more useful measurement for calling code.
@@ -123,7 +123,7 @@ enum Dimension { PROGRESS = 0, TEXT = 1, ICON = 2, DIMENSION_MAX };
 static constexpr int kLayouts[LAYOUT_MAX][DIMENSION_MAX] = {
     { 194,  32,  68, }, // PORTRAIT
     { 340,  32,  68, }, // PORTRAIT_LARGE
-    { 131,  26,  56, }, // LANDSCAPE
+    {  10,  10,  10, }, // LANDSCAPE
     { 262,  52, 112, }, // LANDSCAPE_LARGE
 };
 
