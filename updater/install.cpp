@@ -72,7 +72,7 @@
 //The offset of bootloader firmware1 is 8M.
 #define BOOTLOADER_OFFSET_FIRMWARE2 37748736
 #define BOOTLOADER_OFFSET_FIRMWARE1 8388608
-
+#define MEM_BOOTLOADER_OFFSET 1024
 // Send over the buffer to recovery though the command pipe.
 static void uiPrint(State* state, const std::string& buffer) {
     UpdaterInfo* ui = reinterpret_cast<UpdaterInfo*>(state->cookie);
@@ -1294,7 +1294,7 @@ char *write_bootloader_nand(const MtdPartition *mtd, off_t offset, Value* conten
 	return 0;
     }
     bool success;
-    unsigned int total_offset = 1024;
+    unsigned int total_offset = MEM_BOOTLOADER_OFFSET;
     if (contents->type == VAL_STRING) {
     // we're given a filename as the contents
     char* filename = contents->data;
@@ -1304,8 +1304,14 @@ char *write_bootloader_nand(const MtdPartition *mtd, off_t offset, Value* conten
 		filename, strerror(errno));
 	return 0;
     }
-    bootloader_head = (char *)malloc(512000);
-    memset(bootloader_head, 0, 512000);
+    struct stat filestat;
+    if (fstat(fileno(f), &filestat) == -1)
+        return 0;
+    unsigned int mem_size = filestat.st_size + MEM_BOOTLOADER_OFFSET;
+    bootloader_head = (char *)malloc(mem_size);
+    if (bootloader_head == NULL)
+       return 0;
+    memset(bootloader_head, 0, mem_size);
     success = true;
     char* buffer = (char *)malloc(BUFSIZ);
     int read;
