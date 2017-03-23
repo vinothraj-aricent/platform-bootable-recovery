@@ -1,4 +1,5 @@
 import /init.recovery.${ro.hardware}.rc
+import init.${ro.hardware}.${ro.boot.storage_type}.rc
 
 on early-init
     # Set the security context of /postinstall if present.
