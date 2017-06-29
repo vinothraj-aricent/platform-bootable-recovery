@@ -32,6 +32,7 @@
 #include <sys/capability.h>
 #include <sys/xattr.h>
 #include <linux/xattr.h>
+#include <limits.h>
 #include <inttypes.h>
 
 #include <memory>
@@ -73,6 +74,8 @@
 #define BOOTLOADER_OFFSET_FIRMWARE2 37748736
 #define BOOTLOADER_OFFSET_FIRMWARE1 8388608
 #define MEM_BOOTLOADER_OFFSET 1024
+#define FILE_NAME_MAX 256
+#define MMC_NUM_OFFSET 17
 // Send over the buffer to recovery though the command pipe.
 static void uiPrint(State* state, const std::string& buffer) {
     UpdaterInfo* ui = reinterpret_cast<UpdaterInfo*>(state->cookie);
@@ -661,6 +664,9 @@ Value* PackageExtractBootloaderFn(const char* name, State* state,
     char content[2];
     char file_force_ro[50];
     char file_boot_config[50];
+    FILE* f;
+    char link[FILE_NAME_MAX];
+    char *real_path;
     UpdaterInfo* ui = (UpdaterInfo*)(state->cookie);
 
     if (argc == 2) {
@@ -679,17 +685,21 @@ Value* PackageExtractBootloaderFn(const char* name, State* state,
         }
 	// the partition of uboot(EMMC) is read only, So should set force_ro to 0
 	// set boot_config to 8 which set boot0 as first boot partition.
+	real_path = realpath(dest_path, link);
+	if (real_path == NULL) {
+		printf("can't readlink from path\n");
+		goto done2;
+	}
 	strcpy(file_force_ro,"/sys/block/mmcblk3boot0/force_ro");
 	strcpy(file_boot_config,"/sys/block/mmcblk3/device/boot_config");
-	file_force_ro[17] = dest_path[17];
-	file_boot_config[17] = dest_path[17];
+	file_force_ro[MMC_NUM_OFFSET] = link[MMC_NUM_OFFSET];
+	file_boot_config[MMC_NUM_OFFSET] = link[MMC_NUM_OFFSET];
 	fd_force_ro = open(file_force_ro,O_RDWR);
 	fd_boot_config = open(file_boot_config,O_RDWR);
-        FILE* f;
-        f = fopen(dest_path, "wb");
+        f = fopen(link, "wb");
         if (f == NULL) {
             printf("%s: can't open %s for write: %s\n",
-                    name, dest_path, strerror(errno));
+                    name, link, strerror(errno));
             goto done2;
         }
 	fdm = fileno(f);
