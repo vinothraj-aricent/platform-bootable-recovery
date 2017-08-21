@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2007 The Android Open Source Project
- * Copyright (C) 2015-2016 Freescale Semiconductor, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,8 +42,6 @@ static int overscan_percent = OVERSCAN_PERCENT;
 static int overscan_offset_x = 0;
 static int overscan_offset_y = 0;
 
-static int gr_vt_fd = -1;
-
 static unsigned char gr_current_r = 255;
 static unsigned char gr_current_g = 255;
 static unsigned char gr_current_b = 255;
@@ -79,28 +76,26 @@ static void text_blend(unsigned char* src_p, int src_row_bytes,
 {
     for (int j = 0; j < height; ++j) {
         unsigned char* sx = src_p;
-        unsigned short* px = (unsigned short*)dst_p;
+        unsigned char* px = dst_p;
         for (int i = 0; i < width; ++i) {
             unsigned char a = *sx++;
-            unsigned char vr, vg, vb;
-            unsigned short xv = *px;
             if (gr_current_a < 255) a = ((int)a * gr_current_a) / 255;
             if (a == 255) {
-                *px = (unsigned short)(((((unsigned short)gr_current_r) << 8)&0xf800) |
-                      ((((unsigned short)gr_current_g) << 3)&0x07e0) |
-                      ((((unsigned short)gr_current_b) >> 3)&0x001f));
+                *px++ = gr_current_r;
+                *px++ = gr_current_g;
+                *px++ = gr_current_b;
+                px++;
             } else if (a > 0) {
-                vr = (((unsigned short)((xv&0xf800) >> 8)) * (255-a) +
-                     ((int)gr_current_r) * a) / 255;
-                vg = (((unsigned short)((xv&0x07e0) >> 3)) * (255-a) +
-                     ((int)gr_current_g) * a) / 255;
-                vb = (((unsigned short)(xv&0x001f) << 3) * (255-a) +
-                     ((int)gr_current_b) * a) / 255;
-                *px = (unsigned short)(((((unsigned short)vr) << 8)&0xf800) |
-                      ((((unsigned short)vg) << 3)&0x07e0) |
-                      (((unsigned short)vb >> 3)&0x001f));
+                *px = (*px * (255-a) + gr_current_r * a) / 255;
+                ++px;
+                *px = (*px * (255-a) + gr_current_g * a) / 255;
+                ++px;
+                *px = (*px * (255-a) + gr_current_b * a) / 255;
+                ++px;
+                ++px;
+            } else {
+                px += 4;
             }
-            px+=1;
         }
         src_p += src_row_bytes;
         dst_p += dst_row_bytes;
@@ -174,17 +169,19 @@ void gr_color(unsigned char r, unsigned char g, unsigned char b, unsigned char a
 
 void gr_clear()
 {
-    int x, y;
-    unsigned char* px = gr_draw->data;
-    for (y = 0; y < gr_draw->height; ++y) {
-        unsigned short* sx = (unsigned short*)px;
-        for (x = 0; x < gr_draw->width; ++x) {
-            *sx = (unsigned short)(((((unsigned short)gr_current_r) << 8)&0xf800) |
-                      ((((unsigned short)gr_current_g) << 3)&0x07e0) |
-                      ((((unsigned short)gr_current_b) >> 3)&0x001f));
-            sx++;
+    if (gr_current_r == gr_current_g && gr_current_r == gr_current_b) {
+        memset(gr_draw->data, gr_current_r, gr_draw->height * gr_draw->row_bytes);
+    } else {
+        unsigned char* px = gr_draw->data;
+        for (int y = 0; y < gr_draw->height; ++y) {
+            for (int x = 0; x < gr_draw->width; ++x) {
+                *px++ = gr_current_r;
+                *px++ = gr_current_g;
+                *px++ = gr_current_b;
+                px++;
+            }
+            px += gr_draw->row_bytes - (gr_draw->width * gr_draw->pixel_bytes);
         }
-        px += gr_draw->row_bytes;
     }
 }
 
@@ -202,11 +199,11 @@ void gr_fill(int x1, int y1, int x2, int y2)
     if (gr_current_a == 255) {
         int x, y;
         for (y = y1; y < y2; ++y) {
-            unsigned short* px = (unsigned short*)p;
+            unsigned char* px = p;
             for (x = x1; x < x2; ++x) {
-                *px = (unsigned short)(((((unsigned short)gr_current_r) << 8)&0xf800) |
-                      ((((unsigned short)gr_current_g) << 3)&0x07e0) |
-                      ((((unsigned short)gr_current_b) >> 3)&0x001f));
+                *px++ = gr_current_r;
+                *px++ = gr_current_g;
+                *px++ = gr_current_b;
                 px++;
             }
             p += gr_draw->row_bytes;
@@ -214,20 +211,15 @@ void gr_fill(int x1, int y1, int x2, int y2)
     } else if (gr_current_a > 0) {
         int x, y;
         for (y = y1; y < y2; ++y) {
-            unsigned short* px = (unsigned short*)p;
-            unsigned char vr, vg, vb, a = gr_current_a;
-            unsigned short xv = *px;
+            unsigned char* px = p;
             for (x = x1; x < x2; ++x) {
-                vr = (((unsigned short)((xv&0xf800) >> 8)) * (255-a) +
-                     ((int)gr_current_r) * a) / 255;
-                vg = (((unsigned short)((xv&0x07e0) >> 3)) * (255-a) +
-                     ((int)gr_current_g) * a) / 255;
-                vb = (((unsigned short)(xv&0x001f) << 3) * (255-a) +
-                     ((int)gr_current_b) * a) / 255;
-                *px = (unsigned short)(((((unsigned short)vr) << 8)&0xf800) |
-                      ((((unsigned short)vg) << 3)&0x07e0) |
-                      (((unsigned short)vb >> 3)&0x001f));
-                px++;
+                *px = (*px * (255-gr_current_a) + gr_current_r * gr_current_a) / 255;
+                ++px;
+                *px = (*px * (255-gr_current_a) + gr_current_g * gr_current_a) / 255;
+                ++px;
+                *px = (*px * (255-gr_current_a) + gr_current_b * gr_current_a) / 255;
+                ++px;
+                ++px;
             }
             p += gr_draw->row_bytes;
         }
@@ -236,6 +228,12 @@ void gr_fill(int x1, int y1, int x2, int y2)
 
 void gr_blit(GRSurface* source, int sx, int sy, int w, int h, int dx, int dy) {
     if (source == NULL) return;
+
+    if (gr_draw->pixel_bytes != source->pixel_bytes) {
+        printf("gr_blit: source has wrong format\n");
+        return;
+    }
+
     dx += overscan_offset_x;
     dy += overscan_offset_y;
 
@@ -244,17 +242,9 @@ void gr_blit(GRSurface* source, int sx, int sy, int w, int h, int dx, int dy) {
     unsigned char* src_p = source->data + sy*source->row_bytes + sx*source->pixel_bytes;
     unsigned char* dst_p = gr_draw->data + dy*gr_draw->row_bytes + dx*gr_draw->pixel_bytes;
 
-    unsigned int x, y;
-    for (y = 0; y < h; ++y) {
-        unsigned int *psx = (unsigned int*)src_p;
-        unsigned short *pdx = (unsigned short*)dst_p;
-        for (x=0; x < w; ++x) {
-            unsigned int sv = *psx;
-            *pdx = (unsigned short)((((sv&0x0000ff) << 8)&0xf800) |
-                   (((sv&0x00ff00)>>5)&0x07e0) | (((sv&0xff0000)>>19)&0x001f));
-            pdx++;
-            psx++;
-        }
+    int i;
+    for (i = 0; i < h; ++i) {
+        memcpy(dst_p, src_p, w * source->pixel_bytes);
         src_p += source->row_bytes;
         dst_p += gr_draw->row_bytes;
     }

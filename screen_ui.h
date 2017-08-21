@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2011 The Android Open Source Project
- * Copyright (C) 2015 Freescale Semiconductor, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -99,9 +98,8 @@ class ScreenRecoveryUI : public RecoveryUI {
     float progressScopeStart, progressScopeSize, progress;
     double progressScopeTime, progressScopeDuration;
 
-    // true when both graphics pages are the same (except for the
-    // progress bar)
-    int pagesIdentical;
+    // true when both graphics pages are the same (except for the progress bar).
+    bool pagesIdentical;
 
     size_t text_cols_, text_rows_;
 
